@@ -157,6 +157,11 @@ async def test_account_ownership_mitigation(db_session, user_repo):
     # Verify verify_account_access is false for non-access accounts
     assert user_repo.verify_account_access(user_id, "account-secret-999") is False
 
+    user_repo.create_account_access(user_id, "acc-12345", "OWNER")
+    assert user_repo.verify_account_access(user_id, "acc-12345") is True
+    accounts = user_repo.list_account_access(user_id)
+    assert accounts == [{"account_id": "acc-12345", "role": "OWNER"}]
+
 
 @pytest.mark.asyncio
 async def test_order_suitability_eval(db_session, user_repo):

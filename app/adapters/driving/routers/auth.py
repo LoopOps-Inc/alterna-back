@@ -35,6 +35,18 @@ class RefreshRequest(BaseModel):
 class StepUpPayloadRequest(BaseModel):
     transaction_payload: dict
 
+class AccountAccessInfo(BaseModel):
+    account_id: str
+    role: str
+
+class CurrentUserResponse(BaseModel):
+    user_id: str
+    username: str
+    email: EmailStr
+    is_active: bool
+    account_id: Optional[str] = None
+    accounts: list[AccountAccessInfo]
+
 # --- HIGH FIDELITY ONBOARDING SCHEMAS ---
 
 class OnboardingStartRequest(BaseModel):
@@ -574,6 +586,30 @@ def onboarding_get_status(onboarding_id: str, db: Session = Depends(get_db)):
 
 
 # --- THE REST OF BASIC ROUTERS ---
+
+@router.get("/me", response_model=CurrentUserResponse)
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Returns the authenticated party and the accounts they may access (BE-009)."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    user_repo = SQLAlchemyUserRepository(db)
+    user = user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    accounts = user_repo.list_account_access(user_id)
+    primary_account_id = accounts[0]["account_id"] if accounts else None
+    return CurrentUserResponse(
+        user_id=user.id,
+        username=user.username,
+        email=user.email,
+        is_active=user.is_active,
+        account_id=primary_account_id,
+        accounts=[AccountAccessInfo(**row) for row in accounts],
+    )
+
 
 @router.post("/login")
 async def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
