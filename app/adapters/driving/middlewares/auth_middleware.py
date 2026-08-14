@@ -11,7 +11,7 @@ class JWTAuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Exclude endpoints like open auth and health check
         path = request.url.path
-        if path.endswith("/login") or path.endswith("/refresh") or path.endswith("/health") or "docs" in path or "openapi" in path:
+        if path.endswith("/login") or path.endswith("/refresh") or path.endswith("/register") or path.endswith("/health") or "docs" in path or "openapi" in path:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

@@ -143,3 +143,4 @@ En entornos de producción, asegúrate de:
 1. **Reemplazar secretos predeterminados:** Cambiar `JWT_SECRET` y contraseñas de PostgreSQL por valores complejos generados de forma segura mediante variables de entorno del host o gestores de secretos.
 2. **Cifrado de Comunicaciones:** Toda comunicación entre el cliente (PWA Mobile) y el back-end debe realizarse estrictamente bajo TLS (HTTPS y WSS) utilizando certificados válidos.
 3. **Gestión de Migraciones (Alembic):** Ejecutar las migraciones de base de datos de manera secuencial antes del despliegue productivo del código de la aplicación.
+# alterna-back

@@ -1,6 +1,7 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer
 from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
 from app.adapters.driving.middlewares.auth_middleware import JWTAuthenticationMiddleware
@@ -11,12 +12,18 @@ from app.adapters.driving.webhooks import custodian_webhook
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("altm_backend")
 
+# Instantiate HTTPBearer with auto_error=False so that Swagger UI registers 
+# the "Authorize" button globally, while leaving actual validation and enforcement 
+# to our dedicated JWTAuthenticationMiddleware.
+security_scheme = HTTPBearer(auto_error=False)
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Hexagonal Architecture backend aligned to Alterna Securities policies",
     version="1.0.0",
     docs_url="/docs",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    dependencies=[Depends(security_scheme)]
 )
 
 # Allow CORS for mobile app (PWA)
