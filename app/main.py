@@ -38,14 +38,37 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Allow CORS for mobile app (PWA)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configure CORS dynamically based on security policies and Starlette constraints.
+# Starlette raises a ValueError/AssertionError if allow_origins=["*"] and allow_credentials=True.
+if settings.BACKEND_CORS_ORIGINS:
+    if "*" in settings.BACKEND_CORS_ORIGINS:
+        logger.warning(
+            "CORS Configuration: Wildcard '*' found in BACKEND_CORS_ORIGINS with allow_credentials=True. "
+            "Reverting to allow_credentials=False to prevent Starlette from crashing or throwing errors."
+        )
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.BACKEND_CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Register JWT Session-checking and RTR Middleware
 app.add_middleware(JWTAuthenticationMiddleware)
