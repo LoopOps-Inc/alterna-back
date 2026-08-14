@@ -38,7 +38,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS dynamically based on security policies and Starlette constraints.
+# Register JWT Session-checking and RTR Middleware (Innermost)
+app.add_middleware(JWTAuthenticationMiddleware)
+
+# Configure CORS dynamically based on security policies and Starlette constraints (Outermost).
 # Starlette raises a ValueError/AssertionError if allow_origins=["*"] and allow_credentials=True.
 if settings.BACKEND_CORS_ORIGINS:
     if "*" in settings.BACKEND_CORS_ORIGINS:
@@ -69,9 +72,6 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-# Register JWT Session-checking and RTR Middleware
-app.add_middleware(JWTAuthenticationMiddleware)
 
 # Register Exception Handlers mapping domain exceptions to HTTP codes with PII protection
 register_exception_handlers(app)
