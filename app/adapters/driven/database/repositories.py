@@ -117,6 +117,18 @@ class SQLAlchemyUserRepository(IUserRepository):
         self.db.merge(db_access)
         self.db.commit()
 
+    def list_account_access(self, party_id: str) -> List[Dict[str, str]]:
+        rows = (
+            self.db.query(DBAccountAccess)
+            .filter(
+                DBAccountAccess.party_id == party_id,
+                DBAccountAccess.revoked_at.is_(None),
+            )
+            .order_by(DBAccountAccess.created_at.asc())
+            .all()
+        )
+        return [{"account_id": row.account_id, "role": row.role} for row in rows]
+
 
 class SQLAlchemyPortfolioRepository(IPortfolioRepository):
     def __init__(self, db: Session):
