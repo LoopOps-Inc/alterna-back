@@ -52,6 +52,11 @@ class PasswordHasher:
             pass
 
 
+def execute_decoy_hash() -> None:
+    """Executes a dummy Argon2id hash verify to maintain constant time profile for non-existent users BE-001"""
+    PasswordHasher.execute_decoy_hash()
+
+
 class KeyVaultSigner:
     @staticmethod
     def sign_payload(payload: Dict[str, Any]) -> str:
