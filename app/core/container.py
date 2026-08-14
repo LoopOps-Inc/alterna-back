@@ -1,6 +1,9 @@
 from typing import Generator
+import logging
+import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import OperationalError
 from app.core.config import settings
 from app.adapters.driven.database.models import Base
 from app.adapters.driven.database.repositories import (
@@ -14,6 +17,8 @@ from app.adapters.driven.cache.redis_service import RedisSessionCache
 from app.adapters.driven.custodian.pershing_client import PershingCustodianClient
 from app.adapters.driven.services.notification_service import OutOfBandNotificationService
 
+logger = logging.getLogger("altm_backend")
+
 # Database engine initialization. 
 # For lightweight testing, if sqlite is configured or database is empty, fall back to sqlite in-memory
 if "sqlite" in settings.DATABASE_URL or "postgresql" not in settings.DATABASE_URL:
@@ -23,8 +28,38 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create tables in sandbox memory database
-Base.metadata.create_all(bind=engine)
+
+def init_db() -> None:
+    """Initializes the database and creates tables with a retry policy for connection/DNS lag."""
+    # SQLite has no connection delay
+    if "sqlite" in settings.DATABASE_URL or "postgresql" not in settings.DATABASE_URL:
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("SQLite database tables created successfully.")
+        except Exception as e:
+            logger.error(f"Error creating SQLite tables: {e}")
+            raise e
+        return
+
+    # PostgreSQL retry mechanism
+    max_retries = 5
+    retry_delay = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to database and creating tables (attempt {attempt}/{max_retries})...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("PostgreSQL database tables created successfully.")
+            return
+        except OperationalError as e:
+            if attempt == max_retries:
+                logger.error("Failed to connect to database after maximum retries.")
+                raise e
+            logger.warning(
+                f"Database connection attempt {attempt} failed: {e}. "
+                f"Retrying in {retry_delay}s..."
+            )
+            time.sleep(retry_delay)
+
 
 def get_db() -> Generator[Session, None, None]:
     """Provides a transactional database session context generator"""

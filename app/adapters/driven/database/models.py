@@ -129,7 +129,6 @@ class DBOrder(Base):
     average_filled_price = Column(Numeric(18, 6), nullable=True)
 
     __table_args__ = (
-        # BE-046: Physical database unique constraint to guarantee idempotency
         Index("idx_order_idempotency", "idempotency_key", unique=True),
     )
 
@@ -160,7 +159,6 @@ class DBTransfer(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
-        # BE-046: Physical database unique constraint to guarantee transfer idempotency
         Index("idx_transfer_idempotency", "idempotency_key", unique=True),
     )
 
@@ -197,3 +195,74 @@ class DBTaxLot(Base):
     quantity = Column(Numeric(18, 6), nullable=False)
     purchase_price = Column(Numeric(18, 6), nullable=False)
     remaining_quantity = Column(Numeric(18, 6), nullable=False)
+
+
+class DBOnboardingProgress(Base):
+    __tablename__ = "onboarding_progress"
+    
+    id = Column(String, primary_key=True)  # onboarding transaction ID / session uuid
+    username = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    current_step = Column(String, default="START", nullable=False)
+    
+    # Step 1: Verification
+    phone_verified = Column(Boolean, default=False, nullable=False)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    
+    # Step 2: Personal Data & OCR
+    full_name = Column(String, nullable=True)
+    curp = Column(String, nullable=True)
+    rfc = Column(String, nullable=True)
+    birth_date = Column(String, nullable=True)
+    birth_place = Column(String, nullable=True)
+    nationality = Column(String, nullable=True)
+    occupation = Column(String, nullable=True)
+    id_type = Column(String, nullable=True) # INE or PASSPORT
+    id_number = Column(String, nullable=True)
+    id_image_quality = Column(Numeric(5, 2), nullable=True)
+    
+    # Step 3: Biometrics
+    biometric_consent_given = Column(Boolean, default=False, nullable=False)
+    biometric_similarity_score = Column(Numeric(5, 2), nullable=True)
+    biometric_liveness_score = Column(Numeric(5, 2), nullable=True)
+    biometric_attempts = Column(Integer, default=0, nullable=False)
+    
+    # Step 4: Address
+    address_street = Column(String, nullable=True)
+    address_city = Column(String, nullable=True)
+    address_state = Column(String, nullable=True)
+    address_zip = Column(String, nullable=True)
+    address_proof_document = Column(String, nullable=True)
+    
+    # Step 5: Financial
+    funds_source = Column(String, nullable=True)
+    declared_wealth = Column(Numeric(18, 2), nullable=True)
+    investment_purpose = Column(String, nullable=True)
+    
+    # Step 6: PEP & Screening
+    is_pep = Column(Boolean, default=False, nullable=False)
+    pep_details = Column(Text, nullable=True)
+    screening_passed = Column(Boolean, default=False, nullable=False)
+    screening_result = Column(Text, nullable=True)
+    screening_list_version = Column(String, default="2026.08.13-V1", nullable=True)
+    
+    # Step 7: Investor Profile
+    risk_profile = Column(String, default="CONSERVATIVE", nullable=False)
+    investor_profile_score = Column(Integer, default=0, nullable=False)
+    
+    # Step 8: Consents & FATCA
+    fatca_residency_us = Column(Boolean, default=False, nullable=False)
+    fatca_tin = Column(String, nullable=True)
+    consents_accepted = Column(Boolean, default=False, nullable=False)
+    
+    # Step 9: Digital Signature
+    signed_contract_hash = Column(String, nullable=True)
+    signed_at = Column(DateTime, nullable=True)
+    
+    # Metadata
+    status = Column(String, default="IN_PROGRESS", nullable=False) # IN_PROGRESS, ESCALATED, COMPLETED, BLOCKED
+    risk_classification = Column(String, default="LOW", nullable=False) # LOW, MEDIUM, HIGH
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

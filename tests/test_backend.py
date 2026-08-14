@@ -1,3 +1,14 @@
+import sys
+import sqlalchemy
+
+# --- SQLALCHEMY POSTGRES BYPASS PATCH FOR TESTING ---
+_original_create_engine = sqlalchemy.create_engine
+def _mock_create_engine(*args, **kwargs):
+    if args and any("postgresql" in str(arg) for arg in args):
+        return _original_create_engine("sqlite:///file:test_onboarding?mode=memory&cache=shared", connect_args={"check_same_thread": False})
+    return _original_create_engine(*args, **kwargs)
+sqlalchemy.create_engine = _mock_create_engine
+
 import pytest
 import uuid
 import time
@@ -6,7 +17,7 @@ from decimal import Decimal
 from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.adapters.driven.database.models import Base, DBUser, DBProfileChangeLog, DBTransfer, DBAMLAlert
+from app.adapters.driven.database.models import Base, DBUser, DBProfileChangeLog, DBTransfer, DBAMLAlert, DBOnboardingProgress
 from app.adapters.driven.database.repositories import (
     SQLAlchemyUserRepository,
     SQLAlchemyPortfolioRepository,
@@ -38,7 +49,8 @@ from app.core.security import PasswordHasher
 
 @pytest.fixture
 def db_session():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    # Use shared in-memory SQLite to allow sharing tables and data between threads (FastAPI TestClient)
+    engine = create_engine("sqlite:///file:test_onboarding?mode=memory&cache=shared", connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -298,3 +310,164 @@ async def test_aml_smurfing_pitufeo_rule(db_session, user_repo, aml_repo):
     alert = db_session.query(DBAMLAlert).filter(DBAMLAlert.party_id == user_id).first()
     if alert:
         assert alert.rule_code == "AML-02"
+
+
+def test_high_fidelity_onboarding_full_flow(db_session):
+    """
+    Validates the complete 10+ step onboarding and digital KYC compliance flow (EP-06).
+    """
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from app.adapters.driving.routers.auth import router as auth_router
+    from app.core.container import get_db
+
+    # Create dummy app and inject mock DB
+    app = FastAPI()
+    app.include_router(auth_router)
+    app.dependency_overrides[get_db] = lambda: db_session
+    
+    # Explicitly ensure all metadata tables are created on the active db_session bind connection (to avoid OperationalError table not found)
+    Base.metadata.create_all(bind=db_session.bind)
+    
+    client = TestClient(app)
+    
+    # Step 1: Start Onboarding (RF-110)
+    res = client.post("/auth/onboarding/start", json={
+        "username": "onboard_test",
+        "email": "onboard@test.com",
+        "password": "SecurePassword123!",
+        "phone": "+525512345678"
+    })
+    assert res.status_code == 201
+    data = res.json()
+    onboarding_id = data["onboarding_id"]
+    assert data["next_step"] == "OTP_VERIFICATION"
+    
+    # Step 2: Verify OTP (RF-110)
+    res = client.post("/auth/onboarding/verify-otp", json={
+        "onboarding_id": onboarding_id,
+        "email_otp": "1234",
+        "phone_otp": "5678"
+    })
+    assert res.status_code == 200
+    assert res.json()["next_step"] == "PERSONAL_DATA"
+    
+    # Step 3: Personal Data (RF-114)
+    res = client.post("/auth/onboarding/personal-data", json={
+        "onboarding_id": onboarding_id,
+        "full_name": "Juan Perez",
+        "curp": "PEPJ900101HDFRND01",
+        "rfc": "PEPJ900101A12",
+        "birth_date": "1990-01-01",
+        "birth_place": "CDMX",
+        "nationality": "Mexicana",
+        "occupation": "Trader"
+    })
+    assert res.status_code == 200
+    
+    # Step 4: Document Upload (RF-112)
+    # Testing blurry rejection
+    res = client.post("/auth/onboarding/document-upload", json={
+        "onboarding_id": onboarding_id,
+        "id_type": "INE",
+        "id_number": "123456789",
+        "id_image_base64": "blurry_image_data_here"
+    })
+    assert res.status_code == 400
+    assert "borrosa" in res.json()["detail"]
+    
+    # Testing correct upload
+    res = client.post("/auth/onboarding/document-upload", json={
+        "onboarding_id": onboarding_id,
+        "id_type": "INE",
+        "id_number": "123456789",
+        "id_image_base64": "high_quality_clear_base64"
+    })
+    assert res.status_code == 200
+    
+    # Step 5: Biometrics (RF-113 & TC-113-01)
+    # Testing lack of consent
+    res = client.post("/auth/onboarding/biometrics", json={
+        "onboarding_id": onboarding_id,
+        "biometric_consent_given": False,
+        "selfie_image_base64": "selfie_clear"
+    })
+    assert res.status_code == 400
+    assert "consent" in res.json()["detail"].lower()
+    
+    # Testing success consent + selfie
+    res = client.post("/auth/onboarding/biometrics", json={
+        "onboarding_id": onboarding_id,
+        "biometric_consent_given": True,
+        "selfie_image_base64": "selfie_clear"
+    })
+    assert res.status_code == 200
+    
+    # Step 6: Address Verification (RF-115)
+    res = client.post("/auth/onboarding/address", json={
+        "onboarding_id": onboarding_id,
+        "street": "Av Reforma 100",
+        "city": "CDMX",
+        "state": "DF",
+        "zip_code": "06600",
+        "proof_of_address_base64": "pdf_proof"
+    })
+    assert res.status_code == 200
+    
+    # Step 7: Financial declaration (RF-116)
+    res = client.post("/auth/onboarding/financial", json={
+        "onboarding_id": onboarding_id,
+        "funds_source": "SALARY",
+        "declared_wealth": 5000000.00,
+        "investment_purpose": "GROWTH"
+    })
+    assert res.status_code == 200
+    
+    # Step 8: PEP & Screening (RF-117 & RF-118)
+    res = client.post("/auth/onboarding/pep-screening", json={
+        "onboarding_id": onboarding_id,
+        "is_pep": False
+    })
+    assert res.status_code == 200
+    assert "2026.08.13-V1" in res.json()["message"]
+    
+    # Step 9: Investor Risk Profile (RF-119)
+    res = client.post("/auth/onboarding/investor-profile", json={
+        "onboarding_id": onboarding_id,
+        "objective": "Retirement",
+        "horizon": "Long-term",
+        "risk_tolerance": "high",
+        "knowledge_experience": "expert"
+    })
+    assert res.status_code == 200
+    assert res.json()["profile"] == "AGGRESSIVE"
+    
+    # Step 10: Individual Consents & FATCA (RF-121)
+    res = client.post("/auth/onboarding/fatca-consents", json={
+        "onboarding_id": onboarding_id,
+        "intermediate_contract_consent": True,
+        "privacy_policy_consent": True,
+        "commissions_catalog_consent": True,
+        "terms_of_use_consent": True,
+        "biometric_treatment_consent": True,
+        "document_hash": "sha256-4da8-9861-f09477b7cb42"
+    })
+    assert res.status_code == 200
+    
+    # Step 11: Get current status (RF-125)
+    res = client.get(f"/auth/onboarding/status/{onboarding_id}")
+    assert res.status_code == 200
+    assert res.json()["current_step"] == "SIGN"
+    
+    # Step 12: Digital signature & official registration (RF-122)
+    res = client.post("/auth/onboarding/sign", json={
+        "onboarding_id": onboarding_id,
+        "signature_text": "Juan Perez Signature"
+    })
+    assert res.status_code == 200
+    assert res.json()["status"] == "COMPLETED"
+    
+    # Verify the user exists in database and can log in now
+    user = db_session.query(DBUser).filter(DBUser.username == "onboard_test").first()
+    assert user is not None
+    assert user.email == "onboard@test.com"

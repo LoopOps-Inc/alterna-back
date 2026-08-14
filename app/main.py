@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
@@ -7,10 +8,20 @@ from app.core.exception_handlers import register_exception_handlers
 from app.adapters.driving.middlewares.auth_middleware import JWTAuthenticationMiddleware
 from app.adapters.driving.routers import auth, portfolio, orders, money
 from app.adapters.driving.webhooks import custodian_webhook
+from app.core.container import init_db
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("altm_backend")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize the database on startup (with connection retries)
+    logger.info("Initializing database on startup...")
+    init_db()
+    yield
+
 
 # Instantiate HTTPBearer with auto_error=False so that Swagger UI registers 
 # the "Authorize" button globally, while leaving actual validation and enforcement 
@@ -23,7 +34,8 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    dependencies=[Depends(security_scheme)]
+    dependencies=[Depends(security_scheme)],
+    lifespan=lifespan
 )
 
 # Allow CORS for mobile app (PWA)
