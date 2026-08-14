@@ -6,7 +6,7 @@ from fastapi.security import HTTPBearer
 from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
 from app.adapters.driving.middlewares.auth_middleware import JWTAuthenticationMiddleware
-from app.adapters.driving.routers import auth, portfolio, orders, money
+from app.adapters.driving.routers import auth, portfolio, orders, money, movements
 from app.adapters.driving.webhooks import custodian_webhook
 from app.core.container import init_db
 
@@ -81,6 +81,7 @@ app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(portfolio.router, prefix=settings.API_V1_STR)
 app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(money.router, prefix=settings.API_V1_STR)
+app.include_router(movements.router, prefix=settings.API_V1_STR)
 app.include_router(custodian_webhook.router, prefix=settings.API_V1_STR)
 
 

@@ -1,1 +1,1 @@
-from app.adapters.driving.routers import auth, portfolio, orders, money
+from app.adapters.driving.routers import auth, portfolio, orders, money, movements
